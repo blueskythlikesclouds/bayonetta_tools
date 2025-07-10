@@ -839,13 +839,35 @@ module Bayonetta
     class Batch < LibBin::Structure
       register_field :header, BatchHeader
       int32  :num_bone_ref, condition: 'header\has_bone_refs != 0'
-      uint8  :bone_refs, length: 'num_bone_ref', condition: 'header\has_bone_refs != 0'
+      int32  :wide_bone_ref_marker, offset: proc { __position + header.__size + 4 }, condition: 'header\has_bone_refs != 0'
+      field  :bone_refs, proc { wide_bone_ref_marker == -1 ? UInt16 : UInt8 }, length: 'num_bone_ref', offset: proc { __position + header.__size + (wide_bone_ref_marker == -1 ? 8 : 4) }, condition: 'header\has_bone_refs != 0'
       float  :unknown, length: 4, condition: 'header\has_bone_refs == 0'
       uint16 :indices, length: 'header\num_indices', offset: '__position + header\offset_indices'
+
+      def recompute_layout
+        sz = @header.__size
+        if @header.has_bone_refs != 0
+          if @bone_refs && !@bone_refs.empty?
+            @wide_bone_ref_marker = @bone_refs.any? { |ref| ref > 255 } ? -1 : 0
+          else
+            @wide_bone_ref_marker = 0
+          end
+
+          sz += 4 + num_bone_ref
+          if @wide_bone_ref_marker == -1
+            sz += 4 + num_bone_ref
+          end
+        else
+          sz += 16
+        end
+
+        @header.offset_indices = align(sz, 0x100)
+      end
 
       def initialize
         @header = BatchHeader::new
         @num_bone_ref = 0
+        @wide_bone_ref_marker = 0
         @bone_refs = []
         @indices = []
       end
@@ -1029,6 +1051,7 @@ module Bayonetta
         @header.num_batch.times { |j|
           off = align(off, 0x20)
           @batch_offsets.push off
+          @batches[j].recompute_layout
           off += @batches[j].__size
         }
       end
@@ -2354,6 +2377,14 @@ module Bayonetta
       mesh_list.each { |i|
         @meshes[i].batches.each { |b|
           recompute_batch_tangents(b)
+        }
+      }
+    end
+
+    def set_wide_bone_ref
+      meshes.each { |m|
+        m.batches.each { |b|
+          b.wide_bone_ref_marker = -1
         }
       }
     end

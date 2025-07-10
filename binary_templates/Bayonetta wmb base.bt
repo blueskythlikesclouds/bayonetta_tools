@@ -3260,7 +3260,13 @@ typedef struct {
     if (batchHeader.hasBoneRefs) {
         int32 numBoneRefs;
         if(numBoneRefs > 0) {
-            uchar boneRefs[numBoneRefs];
+            int32 wideBoneRefMarker;
+            if (wideBoneRefMarker == -1) {
+                ushort boneRefs[numBoneRefs];
+            } else {
+                FSeek( FTell() - 4 );
+                uchar boneRefs[numBoneRefs];
+            }
         }
     } else {
         struct {
